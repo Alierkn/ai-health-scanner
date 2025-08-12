@@ -76,41 +76,73 @@ export async function POST(request: NextRequest) {
     }
 
     // Call OpenAI Vision API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: NUTRITION_PROMPT
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: dataUrl
+    const allowedModels = new Set(['gpt-4o', 'gpt-4o-mini', 'gpt-4-vision-preview']);
+    const selectedModel = allowedModels.has(model) ? model : 'gpt-4o';
+
+    const callOpenAI = async (chosenModel: string) => {
+      return fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: chosenModel,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: NUTRITION_PROMPT
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: dataUrl,
+                    detail: 'low'
+                  }
                 }
-              }
-            ]
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 300
-      })
-    });
+              ]
+            }
+          ],
+          temperature: 0.2,
+          max_tokens: 300
+        })
+      });
+    };
+
+    let response = await callOpenAI(selectedModel);
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenAI API error:', errorText);
+      let reason = '';
+      let code = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        reason = parsed.error?.message || parsed.message || '';
+        code = parsed.error?.code || '';
+      } catch {}
+
+      // Fallback: model_not_found ise gpt-4o ile tekrar dene
+      if (code === 'model_not_found' && selectedModel !== 'gpt-4o') {
+        response = await callOpenAI('gpt-4o');
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (!content) {
+            return NextResponse.json(
+              { error: 'No analysis received' },
+              { status: 500, headers: { 'Cache-Control': 'no-store' } }
+            );
+          }
+          const analysis = parseHealthAnalysis(content);
+          return NextResponse.json(analysis, { headers: { 'Cache-Control': 'no-store' } });
+        }
+      }
       return NextResponse.json(
-        { error: 'Failed to analyze image' },
+        { error: `Failed to analyze image${reason ? `: ${reason}` : ''}` },
         { 
           status: 500,
           headers: { 'Cache-Control': 'no-store' }

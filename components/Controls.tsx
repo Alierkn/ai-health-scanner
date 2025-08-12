@@ -13,9 +13,9 @@ interface ControlsProps {
 }
 
 const models = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
   { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'gpt-4-vision-preview', label: 'GPT-4 Vision' }
+  { value: 'gpt-4-vision-preview', label: 'GPT-4 Vision' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' }
 ];
 
 export default function Controls({

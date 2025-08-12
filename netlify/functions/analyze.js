@@ -92,43 +92,78 @@ exports.handler = async (event, context) => {
     }
 
     // Call OpenAI Vision API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: NUTRITION_PROMPT
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: dataUrl
-                }
-              }
-            ]
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 300
-      })
-    });
+    const allowedModels = new Set(['gpt-4o', 'gpt-4o-mini', 'gpt-4-vision-preview']);
+    const selectedModel = allowedModels.has(model) ? model : 'gpt-4o';
 
+    async function callOpenAI(chosenModel) {
+      return fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: chosenModel,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: NUTRITION_PROMPT
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: dataUrl,
+                    detail: 'low'
+                  }
+                }
+              ]
+            }
+          ],
+          temperature: 0.2,
+          max_tokens: 300
+        })
+      });
+    }
+
+    let response = await callOpenAI(selectedModel);
+ 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenAI API error:', errorText);
+      let reason = '';
+      let code = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        reason = parsed.error?.message || parsed.message || '';
+        code = parsed.error?.code || '';
+      } catch {}
+      if (code === 'model_not_found' && selectedModel !== 'gpt-4o') {
+        response = await callOpenAI('gpt-4o');
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (!content) {
+            return {
+              statusCode: 500,
+              headers,
+              body: JSON.stringify({ error: 'No analysis received' })
+            };
+          }
+          const analysis = parseHealthAnalysis(content);
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(analysis)
+          };
+        }
+      }
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: 'Failed to analyze image' })
+        body: JSON.stringify({ error: `Failed to analyze image${reason ? `: ${reason}` : ''}` })
       };
     }
 

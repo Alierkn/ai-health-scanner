@@ -20,7 +20,7 @@ export default function Home() {
     pros: ['Point camera at food product'],
     cons: ['Analysis will appear here']
   });
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [model, setModel] = useState('gpt-4o');
   const [autoVoice, setAutoVoice] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
